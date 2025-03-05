@@ -16,7 +16,7 @@ void ADNS9800::begin()
     SPI.begin();
     SPI.setDataMode(SPI_MODE3);
     SPI.setBitOrder(MSBFIRST);
-    SPI.setClockDivider(8); // SPI speed
+    SPI.setClockDivider(16); // SPI speed
 
     // Initialize the sensor
     performStartup();

@@ -2,7 +2,7 @@
 #include "ADNS9800.h"
 
 // Pin definitions for two sensors
-#define CS_PIN_1 8  // First sensor chip select pin
+#define CS_PIN_1 9  // First sensor chip select pin
 #define CS_PIN_2 10 // Second sensor chip select pin
 
 // Create two ADNS9800 sensor objects
@@ -20,28 +20,6 @@ const int outputInterval = 50; // 50ms = 20Hz
 // reset sensor every 10 seconds
 unsigned long lastResetTime = 0;
 const int resetInterval = 5000;
-
-unsigned long lastCheckTime = 0;
-const int checkInterval = 30000;
-
-void checkSensors()
-{
-    // check sensor 1
-    Serial.println("\n=== Checking sensor 1 registers ===");
-    digitalWrite(CS_PIN_1, LOW);
-    delayMicroseconds(50);
-    sensor1.displayRegisters();
-    digitalWrite(CS_PIN_1, HIGH);
-    delayMicroseconds(200);
-
-    // check sensor 2
-    Serial.println("\n=== Checking sensor 2 registers ===");
-    digitalWrite(CS_PIN_2, LOW);
-    delayMicroseconds(50);
-    sensor2.displayRegisters();
-    digitalWrite(CS_PIN_2, HIGH);
-    delayMicroseconds(200);
-}
 
 void setup()
 {
@@ -66,8 +44,6 @@ void setup()
 
     Serial.println("\nBoth sensors initialized. Starting main loop.");
     Serial.println("Outputting at 20Hz (every 50ms)");
-
-    checkSensors();
 }
 
 void loop()
@@ -81,13 +57,12 @@ void loop()
         delayMicroseconds(50);       // stable signal
         bool motion1 = sensor1.readMotion(&deltaX1, &deltaY1);
         digitalWrite(CS_PIN_1, HIGH); // ensure CS1 high
-        delayMicroseconds(200);       // add buffer
+        delayMicroseconds(500);       // add buffer
 
         digitalWrite(CS_PIN_2, LOW); // activate sensor 2
         delayMicroseconds(50);       // stable signal
         bool motion2 = sensor2.readMotion(&deltaX2, &deltaY2);
         digitalWrite(CS_PIN_2, HIGH); // ensure CS2 high
-        delayMicroseconds(200);       // add buffer
 
         // Always print data for both sensors at 20Hz with timestamp
         Serial.print("[T:");
@@ -134,11 +109,4 @@ void loop()
 
     // Small delay to prevent CPU hogging
     delayMicroseconds(100);
-
-    if (millis() - lastCheckTime > checkInterval)
-    {
-        checkSensors();
-        lastCheckTime = millis();
-    }
 }
-
