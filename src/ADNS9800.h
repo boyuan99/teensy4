@@ -79,6 +79,9 @@ public:
     // Reset accumulation
     void resetAccumulation();
 
+    // add new method
+    bool readMotionFiltered(int16_t *dx, int16_t *dy, int samples = 10);
+
 private:
     int _cs_pin;       // Chip select pin
     bool _initialized; // Flag to track initialization status
@@ -92,6 +95,9 @@ private:
 
     // Startup procedure
     void performStartup();
+
+    // add private helper method
+    int16_t processReadings(int16_t samples[], int count);
 };
 
 #endif // ADNS9800_H

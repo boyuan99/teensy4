@@ -49,7 +49,7 @@ bool ADNS9800::readMotion(int16_t *dx, int16_t *dy)
     *dx = -rawX;
     *dy = rawY;
 
-    // 添加更严格的噪声过滤
+    // add stricter noise filtering
     if (abs(*dx) < 3 && abs(*dy) < 3)
     {
         *dx = 0;
@@ -57,6 +57,58 @@ bool ADNS9800::readMotion(int16_t *dx, int16_t *dy)
     }
 
     return true;
+}
+
+bool ADNS9800::readMotionFiltered(int16_t *dx, int16_t *dy, int samples)
+{
+    if (!_initialized)
+        return false;
+
+    int16_t samplesX[samples], samplesY[samples];
+    bool motionDetected = false;
+
+    // multiple sampling
+    for (int i = 0; i < samples; i++)
+    {
+        bool motion = readMotion(&samplesX[i], &samplesY[i]);
+        if (motion)
+            motionDetected = true;
+        // short delay to allow sensor to prepare for next read
+        delayMicroseconds(100);
+    }
+
+    // process sampling results
+    *dx = processReadings(samplesX, samples);
+    *dy = processReadings(samplesY, samples);
+
+    return motionDetected;
+}
+
+int16_t ADNS9800::processReadings(int16_t samples[], int count)
+{
+    // simple sorting
+    for (int i = 0; i < count - 1; i++)
+    {
+        for (int j = i + 1; j < count; j++)
+        {
+            if (samples[i] > samples[j])
+            {
+                int16_t temp = samples[i];
+                samples[i] = samples[j];
+                samples[j] = temp;
+            }
+        }
+    }
+
+    // return median
+    if (count % 2 == 0)
+    {
+        return (samples[count / 2] + samples[count / 2 - 1]) / 2;
+    }
+    else
+    {
+        return samples[count / 2];
+    }
 }
 
 uint8_t ADNS9800::readRegister(uint8_t reg_addr)

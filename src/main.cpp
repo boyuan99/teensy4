@@ -13,13 +13,13 @@ ADNS9800 sensor2(CS_PIN_2);
 int16_t deltaX1 = 0, deltaY1 = 0;
 int16_t deltaX2 = 0, deltaY2 = 0;
 
+// Variables to store accumulated positions for both sensors
+int32_t accX1 = 0, accY1 = 0;
+int32_t accX2 = 0, accY2 = 0;
+
 // Timer for 20Hz update rate
 unsigned long lastOutputTime = 0;
 const int outputInterval = 50; // 50ms = 20Hz
-
-// reset sensor every 10 seconds
-unsigned long lastResetTime = 0;
-const int resetInterval = 5000;
 
 void setup()
 {
@@ -53,16 +53,28 @@ void loop()
     // Check if it's time to output readings (20Hz)
     if (currentTime - lastOutputTime >= outputInterval)
     {
-        digitalWrite(CS_PIN_1, LOW); // activate sensor 1
-        delayMicroseconds(50);       // stable signal
-        bool motion1 = sensor1.readMotion(&deltaX1, &deltaY1);
-        digitalWrite(CS_PIN_1, HIGH); // ensure CS1 high
-        delayMicroseconds(500);       // add buffer
+        digitalWrite(CS_PIN_1, LOW);
+        delayMicroseconds(50);
+        bool motion1 = sensor1.readMotionFiltered(&deltaX1, &deltaY1);
+        digitalWrite(CS_PIN_1, HIGH);
+        delayMicroseconds(500);
 
-        digitalWrite(CS_PIN_2, LOW); // activate sensor 2
-        delayMicroseconds(50);       // stable signal
-        bool motion2 = sensor2.readMotion(&deltaX2, &deltaY2);
-        digitalWrite(CS_PIN_2, HIGH); // ensure CS2 high
+        digitalWrite(CS_PIN_2, LOW);
+        delayMicroseconds(50);
+        bool motion2 = sensor2.readMotionFiltered(&deltaX2, &deltaY2);
+        digitalWrite(CS_PIN_2, HIGH);
+
+        // Update accumulated positions
+        if (motion1)
+        {
+            accX1 += deltaX1;
+            accY1 += deltaY1;
+        }
+        if (motion2)
+        {
+            accX2 += deltaX2;
+            accY2 += deltaY2;
+        }
 
         // Always print data for both sensors at 20Hz with timestamp
         Serial.print("[T:");
@@ -74,10 +86,18 @@ void loop()
             Serial.print(deltaX1);
             Serial.print(" Y: ");
             Serial.print(deltaY1);
+            Serial.print(" AccX: ");
+            Serial.print(accX1);
+            Serial.print(" AccY: ");
+            Serial.print(accY1);
         }
         else
         {
             Serial.print("X: 0 Y: 0");
+            Serial.print(" AccX: ");
+            Serial.print(accX1);
+            Serial.print(" AccY: ");
+            Serial.print(accY1);
         }
 
         Serial.print("] Sensor2 [");
@@ -87,24 +107,23 @@ void loop()
             Serial.print(deltaX2);
             Serial.print(" Y: ");
             Serial.print(deltaY2);
+            Serial.print(" AccX: ");
+            Serial.print(accX2);
+            Serial.print(" AccY: ");
+            Serial.print(accY2);
         }
         else
         {
             Serial.print("X: 0 Y: 0");
+            Serial.print(" AccX: ");
+            Serial.print(accX2);
+            Serial.print(" AccY: ");
+            Serial.print(accY2);
         }
         Serial.println("]");
 
         // Update the timer
         lastOutputTime = currentTime;
-    }
-
-    // reset sensor to prevent accumulation
-    if (currentTime - lastResetTime > resetInterval)
-    {
-        // clean accumulation
-        sensor1.resetAccumulation();
-        sensor2.resetAccumulation();
-        lastResetTime = currentTime;
     }
 
     // Small delay to prevent CPU hogging
