@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "ADNS9800.h"
+#include <ADNS9800.h>
 
 // Pin definitions for two sensors
 #define CS_PIN_1 9  // First sensor chip select pin

@@ -46,15 +46,8 @@ bool ADNS9800::readMotion(int16_t *dx, int16_t *dy)
     int16_t rawY = (int16_t)((readRegister(REG_Delta_Y_H) << 8) | readRegister(REG_Delta_Y_L));
 
     // Invert X-axis for more natural movement
-    *dx = -rawX;
+    *dx = rawX;
     *dy = rawY;
-
-    // add stricter noise filtering
-    if (abs(*dx) < 3 && abs(*dy) < 3)
-    {
-        *dx = 0;
-        *dy = 0;
-    }
 
     return true;
 }
