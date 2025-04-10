@@ -45,6 +45,12 @@ bool ADNS9800::readMotion(int16_t *dx, int16_t *dy)
     int16_t rawX = (int16_t)((readRegister(REG_Delta_X_H) << 8) | readRegister(REG_Delta_X_L));
     int16_t rawY = (int16_t)((readRegister(REG_Delta_Y_H) << 8) | readRegister(REG_Delta_Y_L));
 
+    // Filter out readings with absolute values greater than 250
+    if (abs(rawX) > 250)
+        rawX = 0;
+    if (abs(rawY) > 250)
+        rawY = 0;
+
     // Invert X-axis for more natural movement
     *dx = rawX;
     *dy = rawY;
@@ -52,7 +58,7 @@ bool ADNS9800::readMotion(int16_t *dx, int16_t *dy)
     return true;
 }
 
-bool ADNS9800::readMotionFiltered(int16_t *dx, int16_t *dy, int samples)
+bool ADNS9800::readMotionFiltered(float *dx, float *dy, int samples, uint8_t calcMethod)
 {
     if (!_initialized)
         return false;
@@ -63,44 +69,87 @@ bool ADNS9800::readMotionFiltered(int16_t *dx, int16_t *dy, int samples)
     // multiple sampling
     for (int i = 0; i < samples; i++)
     {
-        bool motion = readMotion(&samplesX[i], &samplesY[i]);
+        int16_t tmpX, tmpY;
+        bool motion = readMotion(&tmpX, &tmpY);
+        samplesX[i] = tmpX;
+        samplesY[i] = tmpY;
         if (motion)
             motionDetected = true;
         // short delay to allow sensor to prepare for next read
         delayMicroseconds(100);
     }
 
-    // process sampling results
-    *dx = processReadings(samplesX, samples);
-    *dy = processReadings(samplesY, samples);
+    // process sampling results using the selected calculation method
+    *dx = processReadings(samplesX, samples, calcMethod);
+    *dy = processReadings(samplesY, samples, calcMethod);
 
     return motionDetected;
 }
 
-int16_t ADNS9800::processReadings(int16_t samples[], int count)
+float ADNS9800::processReadings(int16_t samples[], int count, uint8_t calcMethod)
 {
-    // simple sorting
-    for (int i = 0; i < count - 1; i++)
+    if (count <= 1)
+        return (count == 1) ? samples[0] : 0;
+
+    // Find the maximum value and its index
+    int16_t maxVal = samples[0];
+    int maxIndex = 0;
+    for (int i = 1; i < count; i++)
     {
-        for (int j = i + 1; j < count; j++)
+        if (samples[i] > maxVal)
         {
-            if (samples[i] > samples[j])
-            {
-                int16_t temp = samples[i];
-                samples[i] = samples[j];
-                samples[j] = temp;
-            }
+            maxVal = samples[i];
+            maxIndex = i;
         }
     }
 
-    // return median
-    if (count % 2 == 0)
+    // Create a new array without the maximum value
+    int16_t filteredSamples[count - 1];
+    int filteredIdx = 0;
+    for (int i = 0; i < count; i++)
     {
-        return (samples[count / 2] + samples[count / 2 - 1]) / 2;
+        if (i != maxIndex)
+        {
+            filteredSamples[filteredIdx++] = samples[i];
+        }
+    }
+
+    // Apply the selected calculation method
+    if (calcMethod == CALC_MEDIAN)
+    {
+        // Sort for median calculation
+        for (int i = 0; i < count - 2; i++)
+        {
+            for (int j = i + 1; j < count - 1; j++)
+            {
+                if (filteredSamples[i] > filteredSamples[j])
+                {
+                    int16_t temp = filteredSamples[i];
+                    filteredSamples[i] = filteredSamples[j];
+                    filteredSamples[j] = temp;
+                }
+            }
+        }
+
+        // Return median of filtered array
+        if ((count - 1) % 2 == 0)
+        {
+            return (filteredSamples[(count - 1) / 2] + filteredSamples[(count - 1) / 2 - 1]) / 2.0f;
+        }
+        else
+        {
+            return filteredSamples[(count - 1) / 2];
+        }
     }
     else
     {
-        return samples[count / 2];
+        // CALC_AVG_EXCLUDE_MAX - Calculate average of the filtered array
+        float sum = 0;
+        for (int i = 0; i < count - 1; i++)
+        {
+            sum += filteredSamples[i];
+        }
+        return sum / (count - 1);
     }
 }
 

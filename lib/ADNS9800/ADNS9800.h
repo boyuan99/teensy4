@@ -5,6 +5,10 @@
 #include <SPI.h>
 #include "ADNS9800_SROM_A4.h"
 
+// Result calculation methods
+#define CALC_MEDIAN 0
+#define CALC_AVG 1
+
 // ADNS9800 Register Map
 #define REG_Product_ID 0x00
 #define REG_Revision_ID 0x01
@@ -79,8 +83,8 @@ public:
     // Reset accumulation
     void resetAccumulation();
 
-    // add new method
-    bool readMotionFiltered(int16_t *dx, int16_t *dy, int samples = 5);
+    // Read motion data with filtering and optional calculation method
+    bool readMotionFiltered(float *dx, float *dy, int samples = 5, uint8_t calcMethod = CALC_MEDIAN);
 
 private:
     int _cs_pin;       // Chip select pin
@@ -96,8 +100,8 @@ private:
     // Startup procedure
     void performStartup();
 
-    // add private helper method
-    int16_t processReadings(int16_t samples[], int count);
+    // Process readings using the selected calculation method
+    float processReadings(int16_t samples[], int count, uint8_t calcMethod);
 };
 
 #endif // ADNS9800_H

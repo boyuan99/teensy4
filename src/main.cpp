@@ -2,20 +2,29 @@
 #include <ADNS9800.h>
 
 // Pin definitions for two sensors
-#define CS_PIN_1 9  // First sensor chip select pin
-#define CS_PIN_2 10 // Second sensor chip select pin
+#define CS_PIN_1 20 // First sensor chip select pin
+#define CS_PIN_2 21 // Second sensor chip select pin
+
+// Sample size for motion readings
+#define MOTION_SAMPLE_SIZE 5
+
+// Output mode flag - true: print all samples, false: print summary only
+bool printAllSamples = false;
+
+// Selected calculation method - CALC_MEDIAN or CALC_AVG
+uint8_t selectedCalcMethod = CALC_AVG;
 
 // Create two ADNS9800 sensor objects
 ADNS9800 sensor1(CS_PIN_1);
 ADNS9800 sensor2(CS_PIN_2);
 
 // Variables to store motion data for both sensors
-int16_t deltaX1 = 0, deltaY1 = 0;
-int16_t deltaX2 = 0, deltaY2 = 0;
+float deltaX1 = 0, deltaY1 = 0;
+float deltaX2 = 0, deltaY2 = 0;
 
 // Variables to store accumulated positions for both sensors
-int32_t accX1 = 0, accY1 = 0;
-int32_t accX2 = 0, accY2 = 0;
+float accX1 = 0, accY1 = 0;
+float accX2 = 0, accY2 = 0;
 
 // Timer for 20Hz update rate
 unsigned long lastOutputTime = 0;
@@ -53,72 +62,129 @@ void loop()
     // Check if it's time to output readings (20Hz)
     if (currentTime - lastOutputTime >= outputInterval)
     {
-        digitalWrite(CS_PIN_1, LOW);
-        delayMicroseconds(50);
-        bool motion1 = sensor1.readMotionFiltered(&deltaX1, &deltaY1);
-        digitalWrite(CS_PIN_1, HIGH);
-        delayMicroseconds(500);
+        int16_t samplesX1[MOTION_SAMPLE_SIZE], samplesY1[MOTION_SAMPLE_SIZE];
+        bool motionDetected = false;
 
-        digitalWrite(CS_PIN_2, LOW);
-        delayMicroseconds(50);
-        bool motion2 = sensor2.readMotionFiltered(&deltaX2, &deltaY2);
-        digitalWrite(CS_PIN_2, HIGH);
-
-        // Update accumulated positions
-        if (motion1)
+        // Get samples from sensor1
+        for (int i = 0; i < MOTION_SAMPLE_SIZE; i++)
         {
+            digitalWrite(CS_PIN_1, LOW);
+            delayMicroseconds(50);
+            bool motion = sensor1.readMotion(&samplesX1[i], &samplesY1[i]);
+            digitalWrite(CS_PIN_1, HIGH);
+            if (motion)
+                motionDetected = true;
+            delayMicroseconds(1000);
+        }
+
+        // Process sensor1 data using our selected method
+        if (motionDetected)
+        {
+            sensor1.readMotionFiltered(&deltaX1, &deltaY1, MOTION_SAMPLE_SIZE, selectedCalcMethod);
             accX1 += deltaX1;
             accY1 += deltaY1;
         }
+
+        // Read sensor2 data but don't output it
+        digitalWrite(CS_PIN_2, LOW);
+        delayMicroseconds(50);
+        bool motion2 = sensor2.readMotionFiltered(&deltaX2, &deltaY2, MOTION_SAMPLE_SIZE, selectedCalcMethod);
+        digitalWrite(CS_PIN_2, HIGH);
+
+        // Update accumulated positions for sensor2
         if (motion2)
         {
             accX2 += deltaX2;
             accY2 += deltaY2;
         }
 
-        // Always print data for both sensors at 20Hz with timestamp
+        // Only print data for sensor1 with all samples
         Serial.print("[T:");
         Serial.print(currentTime);
         Serial.print("ms] Sensor1 [");
-        if (motion1)
+        if (motionDetected)
         {
-            Serial.print("X: ");
-            Serial.print(deltaX1);
-            Serial.print(" Y: ");
-            Serial.print(deltaY1);
-            Serial.print(" AccX: ");
-            Serial.print(accX1);
-            Serial.print(" AccY: ");
-            Serial.print(accY1);
+            if (printAllSamples)
+            {
+                // Print all sample data
+                Serial.print("X samples: ");
+                for (int i = 0; i < MOTION_SAMPLE_SIZE; i++)
+                {
+                    Serial.print(samplesX1[i]);
+                    if (i < MOTION_SAMPLE_SIZE - 1)
+                        Serial.print(", ");
+                }
+                Serial.print(" | Filtered X: ");
+                Serial.print(deltaX1, 2); // Print with 2 decimal places
+                Serial.print(" | AccX: ");
+                Serial.print(accX1, 2);
+            }
+            else
+            {
+                // Print summary information
+                Serial.print("X: ");
+                Serial.print(deltaX1, 2);
+                Serial.print(" Y: ");
+                Serial.print(deltaY1, 2);
+                Serial.print(" AccX: ");
+                Serial.print(accX1, 2);
+                Serial.print(" AccY: ");
+                Serial.print(accY1, 2);
+            }
         }
         else
         {
-            Serial.print("X: 0 Y: 0");
-            Serial.print(" AccX: ");
-            Serial.print(accX1);
-            Serial.print(" AccY: ");
-            Serial.print(accY1);
+            if (printAllSamples)
+            {
+                Serial.print("No motion detected | AccX: ");
+                Serial.print(accX1, 2);
+            }
+            else
+            {
+                Serial.print("X: 0.00 Y: 0.00");
+                Serial.print(" AccX: ");
+                Serial.print(accX1, 2);
+                Serial.print(" AccY: ");
+                Serial.print(accY1, 2);
+            }
         }
-
         Serial.print("] Sensor2 [");
         if (motion2)
         {
-            Serial.print("X: ");
-            Serial.print(deltaX2);
-            Serial.print(" Y: ");
-            Serial.print(deltaY2);
-            Serial.print(" AccX: ");
-            Serial.print(accX2);
-            Serial.print(" AccY: ");
-            Serial.print(accY2);
+            if (printAllSamples)
+            {
+                Serial.print("X: ");
+                Serial.print(deltaX2, 2);
+                Serial.print(" | AccX: ");
+                Serial.print(accX2, 2);
+            }
+            else
+            {
+                Serial.print("X: ");
+                Serial.print(deltaX2, 2);
+                Serial.print(" Y: ");
+                Serial.print(deltaY2, 2);
+                Serial.print(" AccX: ");
+                Serial.print(accX2, 2);
+                Serial.print(" AccY: ");
+                Serial.print(accY2, 2);
+            }
         }
         else
         {
-            Serial.print("X: 0 Y: 0");
-            Serial.print(" AccX: ");
-            Serial.print(accX2);
-            Serial.print(" AccY: ");
-            Serial.print(accY2);
+            if (printAllSamples)
+            {
+                Serial.print("No motion detected | AccX: ");
+                Serial.print(accX2, 2);
+            }
+            else
+            {
+                Serial.print("X: 0.00 Y: 0.00");
+                Serial.print(" AccX: ");
+                Serial.print(accX2, 2);
+                Serial.print(" AccY: ");
+                Serial.print(accY2, 2);
+            }
         }
         Serial.println("]");
 
