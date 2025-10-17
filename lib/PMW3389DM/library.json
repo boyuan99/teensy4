@@ -1,0 +1,18 @@
+{
+  "name": "PMW3389DM",
+  "version": "1.0.0",
+  "description": "PMW3389DM optical sensor driver library",
+  "keywords": "sensor, optical, mouse, PMW3389",
+  "authors": [
+    {
+      "name": "Your Name",
+      "maintainer": true
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "frameworks": "arduino",
+  "platforms": "*"
+}
