@@ -4,6 +4,11 @@
 #include <Arduino.h>
 #include <SPI.h>
 
+// SPI Settings for Teensy 4.0 compatibility (2MHz like ref/Arduino ADNS)
+#define PMW3389_SPI_SPEED 2000000
+#define PMW3389_SPI_MODE SPI_MODE3
+#define PMW3389_SPI_ORDER MSBFIRST
+
 // PMW3389DM Register Addresses
 #define Product_ID  0x00
 #define Revision_ID 0x01

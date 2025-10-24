@@ -27,13 +27,18 @@ PMW3389DM sensorA(CS_PIN_A);
 PMW3389DM sensorB(CS_PIN_B);
 
 // ============================================================================
-//                           Timing Variables
+//                           Timing Variables & Control
 // ============================================================================
 
 unsigned long lastSampleTS = 0;
 
 // Sampling interval: 50ms = 20 Hz (sample and print together)
 const unsigned int SAMPLE_INTERVAL_US = 50000;
+
+// Acquisition control
+volatile bool isRunning = false;
+unsigned long acquisitionStartTime = 0;
+unsigned long acquisitionDuration = 0;  // 0 = continuous mode (seconds)
 
 // Movement tracking
 long totalX_A = 0;
@@ -58,6 +63,14 @@ const float SENSOR_B_CALIBRATION = 1.00;  // Right sensor calibration
 float combinedX = 0;
 float combinedY = 0;
 float combinedTheta = 0;
+
+// ============================================================================
+//                         Function Declarations
+// ============================================================================
+
+void parseSerialCommand();
+void beginAcquisition(float samplingIntervalMs, float durationSeconds);
+void endAcquisition();
 
 // ============================================================================
 //                         Movement Processing
@@ -94,7 +107,7 @@ void processDualSensorMovement(int dx_a, int dy_a, int dx_b, int dy_b) {
 void setup() {
     Serial.begin(115200);
     while (!Serial) {
-        ; // Wait for serial connection
+        ; // Wait for serial connection (like ref/Arduino)
     }
     delay(100);
 
@@ -103,10 +116,8 @@ void setup() {
 
     // Initialize SPI once before initializing sensors
     // This prevents each sensor from re-initializing the SPI bus
+    // Use modern SPISettings for Teensy 4.0 (2MHz like ref/Arduino's ADNS)
     SPI.begin();
-    SPI.setDataMode(SPI_MODE3);
-    SPI.setBitOrder(MSBFIRST);
-    SPI.setClockDivider(SPI_CLOCK_DIV128);
     delay(100);
 
     // Initialize sensor A (left)
@@ -118,24 +129,48 @@ void setup() {
 
     Serial.println("Setup complete!");
 
-    // Clear sensor buffers
-    for (int i = 0; i < 10; i++) {
-        sensorA.updateMotionBurst();
-        sensorB.updateMotionBurst();
-        delay(10);
+    // Wait for START command (don't clear buffers yet - wait for command like ref/Arduino)
+    Serial.println("\n==============================================");
+    Serial.println("System initialized and ready!");
+    Serial.println("==============================================");
+    Serial.println("Send 'START,<interval_ms>,<duration_s>' to begin");
+    Serial.println("Example: START,50,60  (50ms interval, 60 seconds)");
+    Serial.println("Example: START,50,0   (50ms interval, continuous)");
+    Serial.println("Example: START        (default: 50ms, continuous)");
+    Serial.println("Send 'STOP' to stop acquisition");
+    Serial.println("==============================================\n");
+
+    // Clear any existing serial data
+    while (Serial.available()) {
+        Serial.read();
     }
-
-    lastSampleTS = micros();
-
-    // Print CSV header
-    Serial.println("Time(us),A_X,A_Y,A_SQUAL,A_Surface,B_X,B_Y,B_SQUAL,B_Surface,TotalA_X,TotalA_Y,TotalB_X,TotalB_Y");
 }
 
 void loop() {
+    // Check for serial commands
+    if (Serial.available() > 0) {
+        parseSerialCommand();
+    }
+
+    // Only run acquisition if started
+    if (!isRunning) {
+        return;
+    }
+
+    // Check if acquisition duration has elapsed (if duration is set)
+    if (acquisitionDuration > 0) {
+        unsigned long elapsedSeconds = (millis() - acquisitionStartTime) / 1000;
+        if (elapsedSeconds >= acquisitionDuration) {
+            Serial.println("\n[INFO] Acquisition duration completed");
+            endAcquisition();
+            return;
+        }
+    }
+
     unsigned long currTime = micros();
     unsigned long elapsed = currTime - lastSampleTS;
 
-    // Sample and print at 20 Hz (every 50ms)
+    // Sample and print at configured interval
     if (elapsed >= SAMPLE_INTERVAL_US) {
         // Update both sensors
         sensorA.updateMotionBurst();
@@ -197,4 +232,115 @@ void loop() {
 
         lastSampleTS = currTime;
     }
+}
+
+// ============================================================================
+//                         Serial Command Processing
+// ============================================================================
+
+void parseSerialCommand() {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+
+    if (command.length() == 0) {
+        return;
+    }
+
+    Serial.print("[CMD] Received: ");
+    Serial.println(command);
+
+    // Parse START command
+    if (command.startsWith("START")) {
+        // Default values
+        float intervalMs = 50.0;
+        float durationS = 0.0;
+
+        // Parse parameters if provided
+        int firstComma = command.indexOf(',');
+        if (firstComma > 0) {
+            int secondComma = command.indexOf(',', firstComma + 1);
+
+            String intervalStr = command.substring(firstComma + 1,
+                                                   secondComma > 0 ? secondComma : command.length());
+            intervalMs = intervalStr.toFloat();
+
+            if (secondComma > 0) {
+                String durationStr = command.substring(secondComma + 1);
+                durationS = durationStr.toFloat();
+            }
+        }
+
+        // Validate and set parameters
+        if (intervalMs < 1.0) intervalMs = 50.0;     // Minimum 1ms
+        if (intervalMs > 10000) intervalMs = 10000;  // Maximum 10 seconds
+
+        Serial.println("[CONFIG] Parameters:");
+        Serial.print("  - Sampling interval: ");
+        Serial.print(intervalMs);
+        Serial.println(" ms");
+        Serial.print("  - Duration: ");
+        if (durationS == 0) {
+            Serial.println("Continuous");
+        } else {
+            Serial.print(durationS);
+            Serial.println(" seconds");
+        }
+
+        beginAcquisition(intervalMs, durationS);
+    }
+    // Parse STOP command
+    else if (command.equals("STOP")) {
+        if (isRunning) {
+            Serial.println("[CMD] Stopping acquisition...");
+            endAcquisition();
+        } else {
+            Serial.println("[INFO] Not running, nothing to stop");
+        }
+    }
+    else {
+        Serial.println("[ERROR] Unknown command");
+        Serial.println("Valid commands: START, STOP");
+    }
+}
+
+void beginAcquisition(float samplingIntervalMs, float durationSeconds) {
+    Serial.println("\n[START] Beginning data acquisition...");
+
+    // Reset tracking variables
+    totalX_A = 0;
+    totalY_A = 0;
+    totalX_B = 0;
+    totalY_B = 0;
+    firstReadDone = false;
+
+    // Clear sensor buffers
+    for (int i = 0; i < 5; i++) {
+        sensorA.updateMotionBurst();
+        sensorB.updateMotionBurst();
+        delay(5);
+    }
+
+    // Set acquisition parameters
+    acquisitionDuration = (unsigned long)durationSeconds;
+
+    // Send data header
+    Serial.println("\n--- Data Header ---");
+    Serial.println("Time(us),A_X,A_Y,A_SQUAL,A_Surface,B_X,B_Y,B_SQUAL,B_Surface,TotalA_X,TotalA_Y,TotalB_X,TotalB_Y");
+    Serial.println("--- Data Start ---");
+
+    // Start timing
+    acquisitionStartTime = millis();
+    lastSampleTS = micros();
+    isRunning = true;
+
+    Serial.println("[RUNNING] Acquisition started\n");
+}
+
+void endAcquisition() {
+    isRunning = false;
+
+    Serial.println("\n[STOP] Acquisition ended");
+    Serial.println("==============================================");
+    Serial.println("Send 'START' to begin new acquisition");
+    Serial.println("==============================================\n");
 }

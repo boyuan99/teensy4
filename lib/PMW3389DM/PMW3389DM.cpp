@@ -24,10 +24,9 @@ void PMW3389DM::begin() {
         digitalWrite(_motionPin, HIGH);
     }
 
+    // Note: SPI.begin() should be called before this in main.cpp
+    // Use modern SPISettings for Teensy 4.0 compatibility (2MHz, matching ref/Arduino)
     SPI.begin();
-    SPI.setDataMode(SPI_MODE3);
-    SPI.setBitOrder(MSBFIRST);
-    SPI.setClockDivider(SPI_CLOCK_DIV128);
 
     performStartup();
 
@@ -38,11 +37,14 @@ void PMW3389DM::begin() {
 }
 
 void PMW3389DM::comBegin() {
+    // Use modern SPISettings for Teensy 4.0
+    SPI.beginTransaction(SPISettings(PMW3389_SPI_SPEED, PMW3389_SPI_ORDER, PMW3389_SPI_MODE));
     digitalWrite(_ncs, LOW);
 }
 
 void PMW3389DM::comEnd() {
     digitalWrite(_ncs, HIGH);
+    SPI.endTransaction();
 }
 
 byte PMW3389DM::readRegister(byte reg_addr) {
